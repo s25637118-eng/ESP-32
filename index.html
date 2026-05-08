@@ -3,88 +3,234 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 MQTT 控制面板</title>
+    <title>ESP32 神經連結控制台</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-        button { padding: 15px 30px; font-size: 20px; cursor: pointer; margin: 10px; }
-        .status { font-size: 24px; font-weight: bold; color: #333; margin-top: 20px; }
+        :root {
+            --primary-cyan: #00f2ff;
+            --secondary-purple: #bc13fe;
+            --bg-dark: #0a0b10;
+            --card-bg: rgba(20, 25, 40, 0.8);
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 50% 50%, #1a1e2e 0%, #0a0b10 100%);
+            color: white;
+            font-family: 'Segoe UI', 'Roboto', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* 科技感裝飾背景 */
+        body::before {
+            content: "";
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(rgba(0, 242, 255, 0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0, 242, 255, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+            z-index: -1;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 500px;
+            background: var(--card-bg);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(0, 242, 255, 0.3);
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.1), inset 0 0 15px rgba(0, 242, 255, 0.05);
+            backdrop-filter: blur(10px);
+            position: relative;
+        }
+
+        h1 {
+            font-size: 28px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            margin-bottom: 30px;
+            color: var(--primary-cyan);
+            text-shadow: 0 0 10px var(--primary-cyan);
+        }
+
+        .control-group {
+            margin-bottom: 40px;
+            padding: 20px;
+            border-left: 4px solid var(--secondary-purple);
+            background: rgba(188, 19, 254, 0.05);
+        }
+
+        h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #aaa;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .btn-container {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        button {
+            background: transparent;
+            border: 1px solid var(--primary-cyan);
+            color: var(--primary-cyan);
+            padding: 12px 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: var(--primary-cyan);
+            color: var(--bg-dark);
+            box-shadow: 0 0 20px var(--primary-cyan);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .status-box {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+        }
+
+        .status {
+            font-size: 22px;
+            font-family: 'Courier New', monospace;
+            color: #00ff41; /* 經典矩陣綠 */
+            text-shadow: 0 0 5px #00ff41;
+        }
+
+        .connection-indicator {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            background: #ff4b2b;
+            border-radius: 50%;
+            box-shadow: 0 0 5px #ff4b2b;
+        }
+
+        .connected .dot {
+            background: #00ff41;
+            box-shadow: 0 0 8px #00ff41;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+
     </style>
 </head>
 <body>
 
-    <h1>ESP32 遠端控制</h1>
-    
-    <div>
-        <h3>控制 ESP32 LED</h3>
-        <button onclick="sendLedCommand('ON')">打開 LED</button>
-        <button onclick="sendLedCommand('OFF')">關閉 LED</button>
-    </div>
+    <div class="container">
+        <div class="connection-indicator" id="connTag">
+            <span class="dot"></span> <span id="connText">OFFLINE</span>
+        </div>
 
-    <div>
-        <h3>ESP32 實體按鈕狀態</h3>
-        <div class="status" id="buttonStatus">等待狀態更新...</div>
+        <h1>System Interface</h1>
+        
+        <div class="control-group">
+            <h3>LED Actuator Control</h3>
+            <div class="btn-container">
+                <button onclick="sendLedCommand('ON')">Initialize ON</button>
+                <button onclick="sendLedCommand('OFF')">Terminate OFF</button>
+            </div>
+        </div>
+
+        <div class="control-group" style="border-color: var(--primary-cyan);">
+            <h3>Telemetry Data</h3>
+            <div class="status-box">
+                <div class="status" id="buttonStatus">Standby...</div>
+            </div>
+        </div>
     </div>
 
     <script>
-        // MQTT 伺服器設定 (使用 EMQX 公共伺服器)
         const broker = "broker.emqx.io";
-        const port = 8084; // 8084 是 WSS (WebSocket Secure) 加密通訊埠
-        const clientId = "web_client_" + Math.random().toString(16).substr(2, 8);
+        const port = 8084;
+        const clientId = "web_ui_" + Math.random().toString(16).substr(2, 8);
         
-        // 定義通訊主題 (Topic)
         const topicLedControl = "myhome/esp32/led";
         const topicButtonStatus = "myhome/esp32/button";
 
-        // 建立 MQTT 客戶端
         const client = new Paho.MQTT.Client(broker, port, clientId);
 
         client.onConnectionLost = onConnectionLost;
         client.onMessageArrived = onMessageArrived;
 
-        // 連線設定 (啟用 SSL)
         const options = {
-            useSSL: true, // 關鍵：啟用 WSS 加密連線
+            useSSL: true,
             timeout: 3,
             onSuccess: onConnect,
             onFailure: onFailure
         };
 
-        console.log("正在連線到 MQTT 伺服器...");
         client.connect(options);
 
         function onConnect() {
-            console.log("MQTT 連線成功！(已加密)");
-            // 訂閱 ESP32 按鈕狀態主題
+            console.log("Linked to Neural Net");
+            document.getElementById("connTag").classList.add("connected");
+            document.getElementById("connText").innerText = "ONLINE";
             client.subscribe(topicButtonStatus);
         }
 
         function onFailure(message) {
-            console.error("連線失敗: " + message.errorMessage);
+            console.error("Link Failed: " + message.errorMessage);
         }
 
         function onConnectionLost(responseObject) {
-            if (responseObject.errorCode !== 0) {
-                console.warn("連線中斷: " + responseObject.errorMessage);
-            }
+            document.getElementById("connTag").classList.remove("connected");
+            document.getElementById("connText").innerText = "OFFLINE";
         }
 
-        // 接收到 MQTT 訊息時觸發
         function onMessageArrived(message) {
             if (message.destinationName === topicButtonStatus) {
-                document.getElementById("buttonStatus").innerText = "按鈕狀態: " + message.payloadString;
+                const statusEl = document.getElementById("buttonStatus");
+                statusEl.innerText = "> BTN_STATE: " + message.payloadString;
+                // 增加一個閃爍效果
+                statusEl.style.opacity = 0.5;
+                setTimeout(() => statusEl.style.opacity = 1, 100);
             }
         }
 
-        // 發送控制 LED 的指令
         function sendLedCommand(state) {
             if (client.isConnected()) {
                 const message = new Paho.MQTT.Message(state);
                 message.destinationName = topicLedControl;
                 client.send(message);
-                console.log("已發送指令: " + state);
             } else {
-                alert("尚未連線到 MQTT 伺服器");
+                alert("SYSTEM OFFLINE");
             }
         }
     </script>
