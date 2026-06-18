@@ -240,4 +240,42 @@
             const distToGoal = Math.hypot(player.x - goal.x, player.y - goal.y);
             if (distToGoal < 20) {
                 alert("✦ CORE SYSTEM LINKED! 系統導航成功 ✦");
-                player.x = 50; player.y
+                player.x = 50; player.y = 320; // 重置位置
+                stateA = "OFF"; stateB = "OFF"; activeThruster = "A";
+                updateLogDisplay();
+            }
+
+            // --- 繪圖渲染 ---
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 繪製牆壁 (霓虹紅)
+            ctx.fillStyle = "rgba(255, 75, 75, 0.6)";
+            ctx.shadowBlur = 10; ctx.shadowColor = "#ff4b2b";
+            for (let wall of walls) {
+                ctx.fillRect(wall[0], wall[1], wall[2], wall[3]);
+            }
+
+            // 繪製終點 (核心 CORE)
+            ctx.fillStyle = "#ff00f2";
+            ctx.shadowColor = "#ff00f2";
+            ctx.beginPath();
+            ctx.arc(goal.x, goal.y, goal.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#fff";
+            ctx.font = "9px Arial";
+            ctx.fillText("CORE", goal.x - 13, goal.y + 3);
+
+            // 繪製玩家 (依據當前推進器變色)
+            ctx.fillStyle = (activeThruster === 'A') ? "#00f2ff" : "#bc13fe";
+            ctx.shadowColor = ctx.fillStyle;
+            ctx.shadowBlur = 15;
+            ctx.fillRect(player.x, player.y, player.size, player.size);
+            
+            ctx.shadowBlur = 0; // 重置陰影避免效能下滑
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
