@@ -3,23 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 神經連結控制台</title>
+    <title>ESP32 賽博迷宮導航系統</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
         :root {
             --primary-cyan: #00f2ff;
             --secondary-purple: #bc13fe;
-            --bg-dark: #0a0b10;
-            --card-bg: rgba(20, 25, 40, 0.8);
+            --bg-dark: #07080b;
         }
 
         body {
             background-color: var(--bg-dark);
-            background-image: 
-                radial-gradient(circle at 50% 50%, #1a1e2e 0%, #0a0b10 100%);
             color: white;
-            font-family: 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
@@ -27,212 +25,233 @@
             overflow: hidden;
         }
 
-        /* 科技感裝飾背景 */
+        /* 矩陣網格背景 */
         body::before {
             content: "";
             position: absolute;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(rgba(0, 242, 255, 0.03) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(0, 242, 255, 0.03) 1px, transparent 1px);
-            background-size: 30px 30px;
+            width: 100%; height: 100%;
+            background: linear-gradient(rgba(0, 242, 255, 0.02) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(0, 242, 255, 0.02) 1px, transparent 1px);
+            background-size: 20px 20px;
             z-index: -1;
         }
 
-        .container {
-            width: 90%;
-            max-width: 500px;
-            background: var(--card-bg);
-            padding: 40px;
-            border-radius: 20px;
+        .game-container {
+            background: rgba(20, 25, 40, 0.8.5);
             border: 1px solid rgba(0, 242, 255, 0.3);
-            box-shadow: 0 0 20px rgba(0, 242, 255, 0.1), inset 0 0 15px rgba(0, 242, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 0 30px rgba(0, 242, 255, 0.15);
             backdrop-filter: blur(10px);
+            text-align: center;
             position: relative;
         }
 
         h1 {
-            font-size: 28px;
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            margin-bottom: 30px;
+            font-size: 22px;
+            letter-spacing: 2px;
             color: var(--primary-cyan);
             text-shadow: 0 0 10px var(--primary-cyan);
+            margin: 0 0 15px 0;
         }
 
-        .control-group {
-            margin-bottom: 40px;
-            padding: 20px;
-            border-left: 4px solid var(--secondary-purple);
-            background: rgba(188, 19, 254, 0.05);
+        #gameCanvas {
+            background: #11141d;
+            border: 2px solid #222831;
+            border-radius: 8px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
         }
 
-        h3 {
-            font-size: 14px;
-            text-transform: uppercase;
-            color: #aaa;
-            margin-bottom: 20px;
-            text-align: left;
-        }
-
-        .btn-container {
+        .control-panel {
+            margin-top: 15px;
             display: flex;
-            gap: 15px;
-            justify-content: center;
+            justify-content: space-around;
+            align-items: center;
+            gap: 10px;
         }
 
-        button {
+        .btn {
             background: transparent;
             border: 1px solid var(--primary-cyan);
             color: var(--primary-cyan);
-            padding: 12px 25px;
-            font-size: 16px;
+            padding: 10px 20px;
+            font-size: 14px;
             font-weight: bold;
             cursor: pointer;
             transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
-            text-transform: uppercase;
         }
 
-        button:hover {
+        .btn:hover {
             background: var(--primary-cyan);
             color: var(--bg-dark);
-            box-shadow: 0 0 20px var(--primary-cyan);
+            box-shadow: 0 0 15px var(--primary-cyan);
         }
 
-        button:active {
-            transform: scale(0.95);
-        }
-
-        .status-box {
-            background: rgba(0, 0, 0, 0.4);
-            padding: 20px;
-            border-radius: 10px;
-            border: 1px dashed rgba(255, 255, 255, 0.2);
-        }
-
-        .status {
-            font-size: 22px;
-            font-family: 'Courier New', monospace;
-            color: #00ff41; /* 經典矩陣綠 */
+        .status-text {
+            font-family: monospace;
+            color: #00ff41;
             text-shadow: 0 0 5px #00ff41;
+            font-size: 14px;
         }
 
-        .connection-indicator {
+        #vector-tag {
             position: absolute;
-            top: 15px;
+            top: 20px;
             right: 20px;
             font-size: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            color: #aaa;
         }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            background: #ff4b2b;
-            border-radius: 50%;
-            box-shadow: 0 0 5px #ff4b2b;
-        }
-
-        .connected .dot {
-            background: #00ff41;
-            box-shadow: 0 0 8px #00ff41;
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.4; }
-            100% { opacity: 1; }
-        }
-
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <div class="connection-indicator" id="connTag">
-            <span class="dot"></span> <span id="connText">OFFLINE</span>
-        </div>
-
-        <h1>System Interface</h1>
+    <div class="game-container">
+        <div id="vector-tag">SYS_NAV_v1.0</div>
+        <h1>CYBER MAZE NAVIGATION</h1>
         
-        <div class="control-group">
-            <h3>LED Actuator Control</h3>
-            <div class="btn-container">
-                <button onclick="sendLedCommand('ON')">Initialize ON</button>
-                <button onclick="sendLedCommand('OFF')">Terminate OFF</button>
-            </div>
-        </div>
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
 
-        <div class="control-group" style="border-color: var(--primary-cyan);">
-            <h3>Telemetry Data</h3>
-            <div class="status-box">
-                <div class="status" id="buttonStatus">Standby...</div>
+        <div class="control-panel">
+            <div>
+                <button class="btn" onclick="toggleLed('ON')">燈亮 ⬆️ (前進)</button>
+                <button class="btn" onclick="toggleLed('OFF')">燈滅 ➡️ (右轉)</button>
             </div>
+            <div class="status-text" id="sysLog">LED: OFF | Vector: RIGHT</div>
         </div>
     </div>
 
     <script>
+        // --- MQTT 設定 ---
         const broker = "broker.emqx.io";
         const port = 8084;
-        const clientId = "web_ui_" + Math.random().toString(16).substr(2, 8);
-        
+        const clientId = "cyber_maze_" + Math.random().toString(16).substr(2, 8);
         const topicLedControl = "myhome/esp32/led";
         const topicButtonStatus = "myhome/esp32/button";
 
         const client = new Paho.MQTT.Client(broker, port, clientId);
+        let currentLedState = "OFF";
 
-        client.onConnectionLost = onConnectionLost;
-        client.onMessageArrived = onMessageArrived;
-
-        const options = {
-            useSSL: true,
-            timeout: 3,
-            onSuccess: onConnect,
-            onFailure: onFailure
+        client.onMessageArrived = (msg) => {
+            if (msg.destinationName === topicButtonStatus || msg.destinationName === topicLedControl) {
+                // 允許網頁按鈕或 ESP32 實體回傳來同步狀態
+                updateSystemState(msg.payloadString);
+            }
         };
 
-        client.connect(options);
+        client.connect({ useSSL: true, timeout: 3, onSuccess: () => client.subscribe(topicButtonStatus) });
 
-        function onConnect() {
-            console.log("Linked to Neural Net");
-            document.getElementById("connTag").classList.add("connected");
-            document.getElementById("connText").innerText = "ONLINE";
-            client.subscribe(topicButtonStatus);
-        }
-
-        function onFailure(message) {
-            console.error("Link Failed: " + message.errorMessage);
-        }
-
-        function onConnectionLost(responseObject) {
-            document.getElementById("connTag").classList.remove("connected");
-            document.getElementById("connText").innerText = "OFFLINE";
-        }
-
-        function onMessageArrived(message) {
-            if (message.destinationName === topicButtonStatus) {
-                const statusEl = document.getElementById("buttonStatus");
-                statusEl.innerText = "> BTN_STATE: " + message.payloadString;
-                // 增加一個閃爍效果
-                statusEl.style.opacity = 0.5;
-                setTimeout(() => statusEl.style.opacity = 1, 100);
-            }
-        }
-
-        function sendLedCommand(state) {
+        function toggleLed(state) {
+            currentLedState = state;
+            updateSystemState(state);
             if (client.isConnected()) {
                 const message = new Paho.MQTT.Message(state);
                 message.destinationName = topicLedControl;
                 client.send(message);
-            } else {
-                alert("SYSTEM OFFLINE");
             }
         }
+
+        function updateSystemState(state) {
+            currentLedState = state;
+            document.getElementById("sysLog").innerText = `LED: ${state} | Vector: ${state === 'ON' ? 'UP' : 'RIGHT'}`;
+        }
+
+        // --- 遊戲邏輯引擎 ---
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // 玩家初始位置（左下角）
+        let player = { x: 40, y: 360, size: 12, speed: 1.5 };
+        // 終點位置（右上角）
+        const goal = { x: 360, y: 40, size: 15 };
+
+        // 簡單的迷宮牆壁陣列 [x, y, width, height]
+        const walls = [
+            [0, 0, 400, 15], [0, 385, 400, 15], [0, 0, 15, 400], [385, 0, 15, 400], // 外牆
+            [0, 300, 300, 20],
+            [100, 200, 300, 20],
+            [0, 100, 250, 20],
+            [300, 100, 20, 100]
+        ];
+
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.w &&
+                   rect1.x + rect1.size > rect2.x &&
+                   rect1.y < rect2.y + rect2.h &&
+                   rect1.y + rect1.size > rect2.y;
+        }
+
+        function gameLoop() {
+            // 1. 根據 LED 狀態更新玩家位置
+            let nextPos = { ...player };
+            if (currentLedState === "ON") {
+                nextPos.y -= player.speed; // 燈亮往上
+            } else {
+                nextPos.x += player.speed; // 燈滅往右
+            }
+
+            // 2. 碰撞偵測（牆壁）
+            let hitWall = false;
+            for (let wall of walls) {
+                if (checkCollision(nextPos, { x: wall[0], y: wall[1], w: wall[2], h: wall[3] })) {
+                    hitWall = true;
+                    break;
+                }
+            }
+
+            // 如果沒撞牆，更新位置；撞牆了就卡住
+            if (!hitWall) {
+                player.x = nextPos.x;
+                player.y = nextPos.y;
+            }
+
+            // 3. 判斷是否抵達終點
+            const distToGoal = Math.hypot(player.x - goal.x, player.y - goal.y);
+            if (distToGoal < 20) {
+                alert("✦ 核心解鎖成功！順利通關 ✦");
+                player.x = 40; player.y = 360; // 重置
+                toggleLed("OFF");
+            }
+
+            // --- 繪製畫面 ---
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 繪製牆壁
+            ctx.fillStyle = "rgba(255, 75, 75, 0.6)";
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "#ff4b2b";
+            for (let wall of walls) {
+                ctx.fillRect(wall[0], wall[1], wall[2], wall[3]);
+            }
+
+            // 繪製終點 (GOAL)
+            ctx.fillStyle = "#ff00f2";
+            ctx.shadowColor = "#ff00f2";
+            ctx.beginPath();
+            ctx.arc(goal.x, goal.y, goal.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#fff";
+            ctx.font = "9px Arial";
+            ctx.fillText("CORE", goal.x - 13, goal.y + 3);
+
+            // 繪製玩家 (Player)
+            ctx.fillStyle = varColor('--primary-cyan');
+            ctx.shadowColor = varColor('--primary-cyan');
+            ctx.shadowBlur = 15;
+            ctx.fillRect(player.x, player.y, player.size, player.size);
+            
+            // 消除接下來繪製的陰影
+            ctx.shadowBlur = 0;
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 輔助獲取 CSS 變數顏色
+        function varColor(name) {
+            return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        }
+
+        // 啟動遊戲
+        gameLoop();
     </script>
 </body>
 </html>
