@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 賽博迷宮導航系統</title>
+    <title>ESP32 雙軸向量迷宮系統</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
         :root {
             --primary-cyan: #00f2ff;
             --secondary-purple: #bc13fe;
+            --matrix-green: #00ff41;
             --bg-dark: #07080b;
         }
 
@@ -25,7 +26,6 @@
             overflow: hidden;
         }
 
-        /* 矩陣網格背景 */
         body::before {
             content: "";
             position: absolute;
@@ -37,14 +37,13 @@
         }
 
         .game-container {
-            background: rgba(20, 25, 40, 0.8.5);
+            background: rgba(20, 25, 40, 0.85);
             border: 1px solid rgba(0, 242, 255, 0.3);
             border-radius: 16px;
             padding: 20px;
             box-shadow: 0 0 30px rgba(0, 242, 255, 0.15);
             backdrop-filter: blur(10px);
             text-align: center;
-            position: relative;
         }
 
         h1 {
@@ -65,58 +64,78 @@
         .control-panel {
             margin-top: 15px;
             display: flex;
-            justify-content: space-around;
+            flex-direction: column;
+            gap: 12px;
             align-items: center;
-            gap: 10px;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 15px;
         }
 
         .btn {
             background: transparent;
             border: 1px solid var(--primary-cyan);
             color: var(--primary-cyan);
-            padding: 10px 20px;
+            padding: 12px 24px;
             font-size: 14px;
             font-weight: bold;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
+            user-select: none;
         }
 
-        .btn:hover {
+        .btn.purple {
+            border-color: var(--secondary-purple);
+            color: var(--secondary-purple);
+        }
+
+        .btn:shadow-active, .btn:active {
             background: var(--primary-cyan);
             color: var(--bg-dark);
             box-shadow: 0 0 15px var(--primary-cyan);
         }
 
-        .status-text {
-            font-family: monospace;
-            color: #00ff41;
-            text-shadow: 0 0 5px #00ff41;
-            font-size: 14px;
+        .btn.purple:active {
+            background: var(--secondary-purple);
+            color: white;
+            box-shadow: 0 0 15px var(--secondary-purple);
         }
 
-        #vector-tag {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            font-size: 12px;
-            color: #aaa;
+        .status-text {
+            font-family: monospace;
+            color: var(--matrix-green);
+            text-shadow: 0 0 5px var(--matrix-green);
+            font-size: 13px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 6px 15px;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 255, 65, 0.2);
         }
     </style>
 </head>
 <body>
 
     <div class="game-container">
-        <div id="vector-tag">SYS_NAV_v1.0</div>
-        <h1>CYBER MAZE NAVIGATION</h1>
+        <h1>DUAL-AXIS VECTOR MAZE</h1>
         
         <canvas id="gameCanvas" width="400" height="400"></canvas>
 
         <div class="control-panel">
-            <div>
-                <button class="btn" onclick="toggleLed('ON')">燈亮 ⬆️ (前進)</button>
-                <button class="btn" onclick="toggleLed('OFF')">燈滅 ➡️ (右轉)</button>
+            <div class="btn-row">
+                <button class="btn" 
+                        onmousedown="sendVector('A', 'ON')" onmouseup="sendVector('A', 'OFF')"
+                        ontouchstart="sendVector('A', 'ON')" ontouchend="sendVector('A', 'OFF')">
+                    推進器 A (按住⬆️ / 放開➡️)
+                </button>
+                <button class="btn purple" 
+                        onmousedown="sendVector('B', 'ON')" onmouseup="sendVector('B', 'OFF')"
+                        ontouchstart="sendVector('B', 'ON')" ontouchend="sendVector('B', 'OFF')">
+                    推進器 B (按住⬅️ / 放開⬇️)
+                </button>
             </div>
-            <div class="status-text" id="sysLog">LED: OFF | Vector: RIGHT</div>
+            <div class="status-text" id="sysLog">Vector A: OFF (➡️) | Vector B: OFF (⬇️)</div>
         </div>
     </div>
 
@@ -124,53 +143,64 @@
         // --- MQTT 設定 ---
         const broker = "broker.emqx.io";
         const port = 8084;
-        const clientId = "cyber_maze_" + Math.random().toString(16).substr(2, 8);
-        const topicLedControl = "myhome/esp32/led";
-        const topicButtonStatus = "myhome/esp32/button";
+        const clientId = "cyber_maze_v2_" + Math.random().toString(16).substr(2, 8);
+        
+        // 使用兩個不同主題來區分兩個按鈕/LED
+        const topicA = "myhome/esp32/ledA";
+        const topicB = "myhome/esp32/ledB";
 
         const client = new Paho.MQTT.Client(broker, port, clientId);
-        let currentLedState = "OFF";
+        
+        let stateA = "OFF"; // ON=上, OFF=右
+        let stateB = "OFF"; // ON=左, OFF=下
+        let activeThruster = "A"; // 當前主要驅動的推進器 ('A' 或 'B')
 
         client.onMessageArrived = (msg) => {
-            if (msg.destinationName === topicButtonStatus || msg.destinationName === topicLedControl) {
-                // 允許網頁按鈕或 ESP32 實體回傳來同步狀態
-                updateSystemState(msg.payloadString);
-            }
+            if (msg.destinationName === topicA) stateA = msg.payloadString;
+            if (msg.destinationName === topicB) stateB = msg.payloadString;
+            updateLogDisplay();
         };
 
-        client.connect({ useSSL: true, timeout: 3, onSuccess: () => client.subscribe(topicButtonStatus) });
+        client.connect({ useSSL: true, timeout: 3, onSuccess: () => {
+            client.subscribe(topicA);
+            client.subscribe(topicB);
+        }});
 
-        function toggleLed(state) {
-            currentLedState = state;
-            updateSystemState(state);
+        function sendVector(thruster, state) {
+            activeThruster = thruster; // 切換最後操作的推進器
+            if (thruster === 'A') stateA = state;
+            if (thruster === 'B') stateB = state;
+            
+            updateLogDisplay();
+
             if (client.isConnected()) {
                 const message = new Paho.MQTT.Message(state);
-                message.destinationName = topicLedControl;
+                message.destinationName = (thruster === 'A') ? topicA : topicB;
                 client.send(message);
             }
         }
 
-        function updateSystemState(state) {
-            currentLedState = state;
-            document.getElementById("sysLog").innerText = `LED: ${state} | Vector: ${state === 'ON' ? 'UP' : 'RIGHT'}`;
+        function updateLogDisplay() {
+            const dirA = stateA === 'ON' ? '⬆️' : '➡️';
+            const dirB = stateB === 'ON' ? '⬅️' : '⬇️';
+            document.getElementById("sysLog").innerText = `A: ${stateA} (${dirA}) | B: ${stateB} (${dirB}) | ACTIVE: ${activeThruster}`;
         }
 
         // --- 遊戲邏輯引擎 ---
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
 
-        // 玩家初始位置（左下角）
-        let player = { x: 40, y: 360, size: 12, speed: 1.5 };
-        // 終點位置（右上角）
-        const goal = { x: 360, y: 40, size: 15 };
+        // 玩家初始位置（放在中央偏下，方便四向移動測試）
+        let player = { x: 50, y: 320, size: 12, speed: 1.5 };
+        const goal = { x: 350, y: 50, size: 15 };
 
-        // 簡單的迷宮牆壁陣列 [x, y, width, height]
+        // 重新設計一個適合四向移動的迷宮地圖 [x, y, width, height]
         const walls = [
             [0, 0, 400, 15], [0, 385, 400, 15], [0, 0, 15, 400], [385, 0, 15, 400], // 外牆
-            [0, 300, 300, 20],
-            [100, 200, 300, 20],
-            [0, 100, 250, 20],
-            [300, 100, 20, 100]
+            [0, 260, 280, 20],
+            [120, 140, 280, 20],
+            [120, 140, 20, 120],
+            [250, 0, 20, 80]
         ];
 
         function checkCollision(rect1, rect2) {
@@ -181,15 +211,18 @@
         }
 
         function gameLoop() {
-            // 1. 根據 LED 狀態更新玩家位置
             let nextPos = { ...player };
-            if (currentLedState === "ON") {
-                nextPos.y -= player.speed; // 燈亮往上
-            } else {
-                nextPos.x += player.speed; // 燈滅往右
+
+            // 根據「最後操作或啟用的推進器」來決定目前的移動向量
+            if (activeThruster === 'A') {
+                if (stateA === "ON") nextPos.y -= player.speed;  // A 亮：上
+                else                 nextPos.x += player.speed;  // A 滅：右
+            } else if (activeThruster === 'B') {
+                if (stateB === "ON") nextPos.x -= player.speed;  // B 亮：左
+                else                 nextPos.y += player.speed;  // B 滅：下 (後)
             }
 
-            // 2. 碰撞偵測（牆壁）
+            // 碰撞檢查
             let hitWall = false;
             for (let wall of walls) {
                 if (checkCollision(nextPos, { x: wall[0], y: wall[1], w: wall[2], h: wall[3] })) {
@@ -198,60 +231,13 @@
                 }
             }
 
-            // 如果沒撞牆，更新位置；撞牆了就卡住
             if (!hitWall) {
                 player.x = nextPos.x;
                 player.y = nextPos.y;
             }
 
-            // 3. 判斷是否抵達終點
+            // 勝利檢查
             const distToGoal = Math.hypot(player.x - goal.x, player.y - goal.y);
             if (distToGoal < 20) {
-                alert("✦ 核心解鎖成功！順利通關 ✦");
-                player.x = 40; player.y = 360; // 重置
-                toggleLed("OFF");
-            }
-
-            // --- 繪製畫面 ---
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 繪製牆壁
-            ctx.fillStyle = "rgba(255, 75, 75, 0.6)";
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = "#ff4b2b";
-            for (let wall of walls) {
-                ctx.fillRect(wall[0], wall[1], wall[2], wall[3]);
-            }
-
-            // 繪製終點 (GOAL)
-            ctx.fillStyle = "#ff00f2";
-            ctx.shadowColor = "#ff00f2";
-            ctx.beginPath();
-            ctx.arc(goal.x, goal.y, goal.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = "#fff";
-            ctx.font = "9px Arial";
-            ctx.fillText("CORE", goal.x - 13, goal.y + 3);
-
-            // 繪製玩家 (Player)
-            ctx.fillStyle = varColor('--primary-cyan');
-            ctx.shadowColor = varColor('--primary-cyan');
-            ctx.shadowBlur = 15;
-            ctx.fillRect(player.x, player.y, player.size, player.size);
-            
-            // 消除接下來繪製的陰影
-            ctx.shadowBlur = 0;
-
-            requestAnimationFrame(gameLoop);
-        }
-
-        // 輔助獲取 CSS 變數顏色
-        function varColor(name) {
-            return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-        }
-
-        // 啟動遊戲
-        gameLoop();
-    </script>
-</body>
-</html>
+                alert("✦ CORE SYSTEM LINKED! 系統導航成功 ✦");
+                player.x = 50; player.y
