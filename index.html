@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 雙軸向量迷宮系統</title>
+    <title>ESP32 雙軸向量迷宮系統 - 開關版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
         :root {
@@ -84,6 +84,11 @@
             cursor: pointer;
             transition: all 0.2s;
             user-select: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            min-width: 160px;
         }
 
         .btn.purple {
@@ -91,16 +96,24 @@
             color: var(--secondary-purple);
         }
 
-        .btn:shadow-active, .btn:active {
-            background: var(--primary-cyan);
-            color: var(--bg-dark);
-            box-shadow: 0 0 15px var(--primary-cyan);
+        .btn:active {
+            transform: scale(0.95);
         }
 
-        .btn.purple:active {
-            background: var(--secondary-purple);
-            color: white;
-            box-shadow: 0 0 15px var(--secondary-purple);
+        /* 網頁按鈕內部的燈號指示 */
+        .light-indicator {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #aaa;
+        }
+
+        .btn.active-light .light-indicator {
+            background: var(--matrix-green);
+            color: black;
+            box-shadow: 0 0 8px var(--matrix-green);
+            font-weight: bold;
         }
 
         .status-text {
@@ -118,24 +131,22 @@
 <body>
 
     <div class="game-container">
-        <h1>DUAL-AXIS VECTOR MAZE</h1>
+        <h1>TOGGLE VECTOR MAZE</h1>
         
         <canvas id="gameCanvas" width="400" height="400"></canvas>
 
         <div class="control-panel">
             <div class="btn-row">
-                <button class="btn" 
-                        onmousedown="sendVector('A', 'ON')" onmouseup="sendVector('A', 'OFF')"
-                        ontouchstart="sendVector('A', 'ON')" ontouchend="sendVector('A', 'OFF')">
-                    推進器 A (按住⬆️ / 放開➡️)
+                <button id="btnA" class="btn" onclick="toggleVector('A')">
+                    <span>推進器 A</span>
+                    <span class="light-indicator" id="lightA">LED: OFF (➡️)</span>
                 </button>
-                <button class="btn purple" 
-                        onmousedown="sendVector('B', 'ON')" onmouseup="sendVector('B', 'OFF')"
-                        ontouchstart="sendVector('B', 'ON')" ontouchend="sendVector('B', 'OFF')">
-                    推進器 B (按住⬅️ / 放開⬇️)
+                <button id="btnB" class="btn purple" onclick="toggleVector('B')">
+                    <span>推進器 B</span>
+                    <span class="light-indicator" id="lightB">LED: OFF (⬇️)</span>
                 </button>
             </div>
-            <div class="status-text" id="sysLog">Vector A: OFF (➡️) | Vector B: OFF (⬇️)</div>
+            <div class="status-text" id="sysLog">Vector A: OFF (➡️) | Vector B: OFF (⬇️) | ACTIVE: A</div>
         </div>
     </div>
 
@@ -143,9 +154,8 @@
         // --- MQTT 設定 ---
         const broker = "broker.emqx.io";
         const port = 8084;
-        const clientId = "cyber_maze_v2_" + Math.random().toString(16).substr(2, 8);
+        const clientId = "cyber_maze_toggle_" + Math.random().toString(16).substr(2, 8);
         
-        // 使用兩個不同主題來區分兩個按鈕/LED
         const topicA = "myhome/esp32/ledA";
         const topicB = "myhome/esp32/ledB";
 
@@ -156,9 +166,16 @@
         let activeThruster = "A"; // 當前主要驅動的推進器 ('A' 或 'B')
 
         client.onMessageArrived = (msg) => {
-            if (msg.destinationName === topicA) stateA = msg.payloadString;
-            if (msg.destinationName === topicB) stateB = msg.payloadString;
-            updateLogDisplay();
+            // 當接收到來自 ESP32 的狀態時（例如實體按鈕按了切換），同步更新網頁
+            if (msg.destinationName === topicA) {
+                stateA = msg.payloadString;
+                activeThruster = "A";
+            }
+            if (msg.destinationName === topicB) {
+                stateB = msg.payloadString;
+                activeThruster = "B";
+            }
+            updateUI();
         };
 
         client.connect({ useSSL: true, timeout: 3, onSuccess: () => {
@@ -166,23 +183,49 @@
             client.subscribe(topicB);
         }});
 
-        function sendVector(thruster, state) {
-            activeThruster = thruster; // 切換最後操作的推進器
-            if (thruster === 'A') stateA = state;
-            if (thruster === 'B') stateB = state;
+        // 點擊網頁按鈕時切換狀態並發送
+        function toggleVector(thruster) {
+            activeThruster = thruster;
+            let targetTopic = "";
+            let newState = "";
+
+            if (thruster === 'A') {
+                stateA = (stateA === "OFF") ? "ON" : "OFF";
+                newState = stateA;
+                targetTopic = topicA;
+            } else {
+                stateB = (stateB === "OFF") ? "ON" : "OFF";
+                newState = stateB;
+                targetTopic = topicB;
+            }
             
-            updateLogDisplay();
+            updateUI();
 
             if (client.isConnected()) {
-                const message = new Paho.MQTT.Message(state);
-                message.destinationName = (thruster === 'A') ? topicA : topicB;
+                const message = new Paho.MQTT.Message(newState);
+                message.destinationName = targetTopic;
                 client.send(message);
             }
         }
 
-        function updateLogDisplay() {
+        function updateUI() {
             const dirA = stateA === 'ON' ? '⬆️' : '➡️';
             const dirB = stateB === 'ON' ? '⬅️' : '⬇️';
+
+            // 更新按鈕內部的文字與亮燈樣式
+            const btnA = document.getElementById("btnA");
+            const lightA = document.getElementById("lightA");
+            lightA.innerText = `LED: ${stateA} (${dirA})`;
+            if (stateA === "ON") btnA.classList.add("active-light");
+            else btnA.classList.remove("active-light");
+
+            const btnB = document.getElementById("btnB");
+            const lightB = document.getElementById("lightB");
+            lightB.innerText = `LED: ${stateB} (${dirB})`;
+            if (stateB === "ON") btnB.classList.add("active-light");
+            else btnB.classList.remove("active-light");
+
+            // 更新下方總狀態欄
             document.getElementById("sysLog").innerText = `A: ${stateA} (${dirA}) | B: ${stateB} (${dirB}) | ACTIVE: ${activeThruster}`;
         }
 
@@ -190,11 +233,10 @@
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
 
-        // 玩家初始位置（放在中央偏下，方便四向移動測試）
         let player = { x: 50, y: 320, size: 12, speed: 1.5 };
         const goal = { x: 350, y: 50, size: 15 };
 
-        // 重新設計一個適合四向移動的迷宮地圖 [x, y, width, height]
+        // 迷宮地圖 [x, y, width, height]
         const walls = [
             [0, 0, 400, 15], [0, 385, 400, 15], [0, 0, 15, 400], [385, 0, 15, 400], // 外牆
             [0, 260, 280, 20],
@@ -213,13 +255,13 @@
         function gameLoop() {
             let nextPos = { ...player };
 
-            // 根據「最後操作或啟用的推進器」來決定目前的移動向量
+            // 依據目前被啟動的開關狀態移動
             if (activeThruster === 'A') {
-                if (stateA === "ON") nextPos.y -= player.speed;  // A 亮：上
-                else                 nextPos.x += player.speed;  // A 滅：右
+                if (stateA === "ON") nextPos.y -= player.speed;  // 燈亮：上
+                else                 nextPos.x += player.speed;  // 燈滅：右
             } else if (activeThruster === 'B') {
-                if (stateB === "ON") nextPos.x -= player.speed;  // B 亮：左
-                else                 nextPos.y += player.speed;  // B 滅：下 (後)
+                if (stateB === "ON") nextPos.x -= player.speed;  // 燈亮：左
+                else                 nextPos.y += player.speed;  // 燈滅：下
             }
 
             // 碰撞檢查
@@ -240,9 +282,9 @@
             const distToGoal = Math.hypot(player.x - goal.x, player.y - goal.y);
             if (distToGoal < 20) {
                 alert("✦ CORE SYSTEM LINKED! 系統導航成功 ✦");
-                player.x = 50; player.y = 320; // 重置位置
+                player.x = 50; player.y = 320; // 重置
                 stateA = "OFF"; stateB = "OFF"; activeThruster = "A";
-                updateLogDisplay();
+                updateUI();
             }
 
             // --- 繪圖渲染 ---
@@ -255,7 +297,7 @@
                 ctx.fillRect(wall[0], wall[1], wall[2], wall[3]);
             }
 
-            // 繪製終點 (核心 CORE)
+            // 繪製終點
             ctx.fillStyle = "#ff00f2";
             ctx.shadowColor = "#ff00f2";
             ctx.beginPath();
@@ -265,13 +307,13 @@
             ctx.font = "9px Arial";
             ctx.fillText("CORE", goal.x - 13, goal.y + 3);
 
-            // 繪製玩家 (依據當前推進器變色)
+            // 繪製玩家 (主控 A 藍色，主控 B 紫色)
             ctx.fillStyle = (activeThruster === 'A') ? "#00f2ff" : "#bc13fe";
             ctx.shadowColor = ctx.fillStyle;
             ctx.shadowBlur = 15;
             ctx.fillRect(player.x, player.y, player.size, player.size);
             
-            ctx.shadowBlur = 0; // 重置陰影避免效能下滑
+            ctx.shadowBlur = 0; 
             requestAnimationFrame(gameLoop);
         }
 
