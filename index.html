@@ -59,6 +59,7 @@
             border: 2px solid #222831;
             border-radius: 8px;
             box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+            display: block;
         }
 
         .control-panel {
@@ -125,6 +126,13 @@
             border-radius: 4px;
             border: 1px solid rgba(0, 255, 65, 0.2);
         }
+
+        #mqttStatus {
+            font-family: monospace;
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -146,6 +154,7 @@
                 </button>
             </div>
             <div class="status-text" id="sysLog">A: OFF (➡️) | B: OFF (⬇️) | ACTIVE: A</div>
+            <div id="mqttStatus">MQTT: 連線中...</div>
         </div>
     </div>
 
@@ -158,28 +167,50 @@
         const topicA = "myhome/esp32/ledA";
         const topicB = "myhome/esp32/ledB";
 
-        const client = new Paho.MQTT.Client(broker, port, clientId);
-        
+        let mqttReady = false;
+        let client = null;
+
+        // 嘗試建立 MQTT，失敗不影響遊戲
+        try {
+            client = new Paho.MQTT.Client(broker, port, clientId);
+
+            client.onConnectionLost = (resp) => {
+                mqttReady = false;
+                document.getElementById("mqttStatus").textContent = "MQTT: 連線中斷，本地模式";
+            };
+
+            client.onMessageArrived = (msg) => {
+                if (msg.destinationName === topicA) {
+                    stateA = msg.payloadString;
+                    activeThruster = "A";
+                }
+                if (msg.destinationName === topicB) {
+                    stateB = msg.payloadString;
+                    activeThruster = "B";
+                }
+                updateUI();
+            };
+
+            client.connect({
+                useSSL: true,
+                timeout: 5,
+                onSuccess: () => {
+                    mqttReady = true;
+                    document.getElementById("mqttStatus").textContent = "MQTT: 已連線 ✓";
+                    client.subscribe(topicA);
+                    client.subscribe(topicB);
+                },
+                onFailure: () => {
+                    document.getElementById("mqttStatus").textContent = "MQTT: 無法連線，本地模式";
+                }
+            });
+        } catch(e) {
+            document.getElementById("mqttStatus").textContent = "MQTT: 初始化失敗，本地模式";
+        }
+
         let stateA = "OFF"; 
         let stateB = "OFF"; 
         let activeThruster = "A"; 
-
-        client.onMessageArrived = (msg) => {
-            if (msg.destinationName === topicA) {
-                stateA = msg.payloadString;
-                activeThruster = "A";
-            }
-            if (msg.destinationName === topicB) {
-                stateB = msg.payloadString;
-                activeThruster = "B";
-            }
-            updateUI();
-        };
-
-        client.connect({ useSSL: true, timeout: 3, onSuccess: () => {
-            client.subscribe(topicA);
-            client.subscribe(topicB);
-        }});
 
         function toggleVector(thruster) {
             activeThruster = thruster;
@@ -198,10 +229,12 @@
             
             updateUI();
 
-            if (client.isConnected()) {
-                const message = new Paho.MQTT.Message(newState);
-                message.destinationName = targetTopic;
-                client.send(message);
+            if (mqttReady && client && client.isConnected()) {
+                try {
+                    const message = new Paho.MQTT.Message(newState);
+                    message.destinationName = targetTopic;
+                    client.send(message);
+                } catch(e) {}
             }
         }
 
@@ -228,17 +261,127 @@
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
 
-        // 初始位置，置於左下角起點區
-        let player = { x: 35, y: 345, size: 12, speed: 1.5 };
-        // 終點移至地圖的核心死角（左上角區域）
-        const goal = { x: 45, y: 45, size: 15 };
+        // 玩家初始位置（左上角起點）
+        let player = { x: 30, y: 30, w: 12, h: 12, speed: 1.5 };
+        // 通關點移至右下角死角
+        const goal = { x: 358, y: 358, r: 15 };
 
-        // 🔬 全新實驗地圖規劃 [x, y, width, height]
+        // 牆壁定義 [x, y, w, h]  — 全新地圖，通道從左上繞向右下
         const walls = [
             // 外圍防護牆
-            [0, 0, 400, 15], [0, 385, 400, 15], [0, 0, 15, 400], [385, 0, 15, 400], 
-            // 內部隔絕障礙
-            [75, 75, 20, 310],   // 左側縱向長牆
-            [75, 75, 230, 20],   // 上方橫向長牆
-            [160, 160, 240, 20], // 中部橫向隔層
-            [160, 160, 20, 150], // 中部
+            [0,   0,   400, 15],   // 上
+            [0,   385, 400, 15],   // 下
+            [0,   0,   15,  400],  // 左
+            [385, 0,   15,  400],  // 右
+
+            // ── 第一層：水平長牆，迫使玩家往右 ──
+            [15,  80,  300, 18],   // 上方橫牆（留右側缺口）
+
+            // ── 第二層：縱牆，迫使玩家往下 ──
+            [290, 80,  18,  160],  // 右側縱牆（留下方缺口）
+
+            // ── 第三層：水平牆，迫使玩家往左 ──
+            [80,  220, 230, 18],   // 中部橫牆（留左側缺口）
+
+            // ── 第四層：縱牆，迫使玩家往下 ──
+            [80,  220, 18,  100],  // 左側縱牆（留下方缺口）
+
+            // ── 第五層：水平牆，迫使玩家往右 ──
+            [80,  300, 220, 18],   // 下部橫牆（留右側缺口）
+
+            // ── 第六層：縱牆封鎖，迫使玩家進死角 ──
+            [280, 300, 18,  70],   // 右下縱牆（留底部缺口通往目標）
+
+            // ── 額外阻隔：增加難度 ──
+            [150, 140, 18,  100],  // 中心縱向小牆
+            [150, 140, 140, 18],   // 中心橫向小牆
+        ];
+
+        // 修正後的碰撞檢查：rect1 是玩家 {x,y,w,h}，rect2 是牆壁 {x,y,w,h}
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.w &&
+                   rect1.x + rect1.w > rect2.x &&
+                   rect1.y < rect2.y + rect2.h &&
+                   rect1.y + rect1.h > rect2.y;
+        }
+
+        function tryMove(dx, dy) {
+            const next = { x: player.x + dx, y: player.y + dy, w: player.w, h: player.h };
+            // 邊界限制
+            if (next.x < 0 || next.y < 0 || next.x + next.w > 400 || next.y + next.h > 400) return;
+
+            for (let wall of walls) {
+                const wallRect = { x: wall[0], y: wall[1], w: wall[2], h: wall[3] };
+                if (checkCollision(next, wallRect)) return; // 撞牆，停止
+            }
+            player.x = next.x;
+            player.y = next.y;
+        }
+
+        function gameLoop() {
+            // 移動邏輯
+            if (activeThruster === 'A') {
+                if (stateA === "ON") tryMove(0, -player.speed);  // A亮：上
+                else                 tryMove(player.speed, 0);   // A滅：右
+            } else if (activeThruster === 'B') {
+                if (stateB === "ON") tryMove(-player.speed, 0);  // B亮：左
+                else                 tryMove(0, player.speed);   // B滅：下
+            }
+
+            // 勝利檢查（玩家中心與目標圓心距離）
+            const px = player.x + player.w / 2;
+            const py = player.y + player.h / 2;
+            const dist = Math.hypot(px - goal.x, py - goal.y);
+            if (dist < goal.r + player.w / 2) {
+                setTimeout(() => {
+                    alert("✦ CORE SYSTEM LINKED! 右下核心解鎖成功 ✦");
+                    player.x = 30; player.y = 30;
+                    stateA = "OFF"; stateB = "OFF"; activeThruster = "A";
+                    updateUI();
+                }, 50);
+            }
+
+            // --- 繪圖渲染 ---
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 繪製牆壁
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = "#ff3c3c";
+            ctx.fillStyle = "rgba(255, 60, 60, 0.65)";
+            for (let wall of walls) {
+                ctx.fillRect(wall[0], wall[1], wall[2], wall[3]);
+            }
+
+            // 繪製目標 CORE
+            ctx.shadowColor = "#ff00f2";
+            ctx.shadowBlur = 18;
+            ctx.fillStyle = "#ff00f2";
+            ctx.beginPath();
+            ctx.arc(goal.x, goal.y, goal.r, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 8px 'Segoe UI'";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("CORE", goal.x, goal.y);
+
+            // 繪製玩家（依 activeThruster 切換顏色）
+            const playerColor = (activeThruster === 'A') ? "#00f2ff" : "#bc13fe";
+            ctx.shadowColor = playerColor;
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = playerColor;
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+
+            ctx.shadowBlur = 0;
+            ctx.textAlign = "left";
+            ctx.textBaseline = "alphabetic";
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
