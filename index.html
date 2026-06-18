@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 雙軸向量迷宮系統 - 實驗地圖版</title>
+    <title>ESP32 雙軸向量迷宮系統 - 實驗地圖版(修正)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
         :root {
@@ -205,4 +205,40 @@
             }
         }
 
-        function update
+        function updateUI() {
+            const dirA = stateA === 'ON' ? '⬆️' : '➡️';
+            const dirB = stateB === 'ON' ? '⬅️' : '⬇️';
+
+            const btnA = document.getElementById("btnA");
+            const lightA = document.getElementById("lightA");
+            lightA.innerText = `LED: ${stateA} (${dirA})`;
+            if (stateA === "ON") btnA.classList.add("active-light");
+            else btnA.classList.remove("active-light");
+
+            const btnB = document.getElementById("btnB");
+            const lightB = document.getElementById("lightB");
+            lightB.innerText = `LED: ${stateB} (${dirB})`;
+            if (stateB === "ON") btnB.classList.add("active-light");
+            else btnB.classList.remove("active-light");
+
+            document.getElementById("sysLog").innerText = `A: ${stateA} (${dirA}) | B: ${stateB} (${dirB}) | ACTIVE: ${activeThruster}`;
+        }
+
+        // --- 遊戲邏輯引擎 ---
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // 初始位置，置於左下角起點區
+        let player = { x: 35, y: 345, size: 12, speed: 1.5 };
+        // 終點移至地圖的核心死角（左上角區域）
+        const goal = { x: 45, y: 45, size: 15 };
+
+        // 🔬 全新實驗地圖規劃 [x, y, width, height]
+        const walls = [
+            // 外圍防護牆
+            [0, 0, 400, 15], [0, 385, 400, 15], [0, 0, 15, 400], [385, 0, 15, 400], 
+            // 內部隔絕障礙
+            [75, 75, 20, 310],   // 左側縱向長牆
+            [75, 75, 230, 20],   // 上方橫向長牆
+            [160, 160, 240, 20], // 中部橫向隔層
+            [160, 160, 20, 150], // 中部
